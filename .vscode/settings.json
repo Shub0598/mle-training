@@ -1,0 +1,14 @@
+{
+    "isort.check": true,
+    "[python]" : {
+        "editor.tabSize": 4,
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnType": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": true
+        }
+    },
+    "files.trimTrailingWhitespace": true,
+    "editor.formatOnSave": true,
+
+}
