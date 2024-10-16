@@ -1,0 +1,17 @@
+# Ignore Python bytecode files
+*.pyc
+__pycache__/
+
+# Ignore CSV data files
+*.csv
+*.ipynb
+
+data/
+logs/
+
+# Python package files
+*.egg
+*.egg-info/
+
+*checkpoint.py
+tempCodeRunnerFile.py
