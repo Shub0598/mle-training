@@ -16,6 +16,19 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import GridSearchCV, train_test_split
 from HousePricePrediction.utils import configure_logger
+#from utils import *
+import tarfile
+import urllib
+import numpy as np
+import pandas as pd
+from zlib import crc32
+from pandas.plotting import scatter_matrix
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import make_column_selector, ColumnTransformer
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import FunctionTransformer
 
 
 def load_housing_data(housing_path: str) -> pd.DataFrame:
@@ -80,61 +93,81 @@ def main():
             exc_info=True,
         )
     # housing.to_csv("./data/raw/housing.csv")
+    # train_set, test_set = train_test_split(housing, test_size=0.2, random_state=42)
+
+    # housing_labels = train_set["median_house_value"].copy()
+    # train_set = train_set.drop(
+    #     "median_house_value", axis=1
+    # )  # drop labels for training set
+
+    #housing = housing.drop(columns = ["longitude","latitude"])
+
+    #get_feature_names_from_column_transformer(preprocessing)
     train_set, test_set = train_test_split(housing, test_size=0.2, random_state=42)
 
-    housing_labels = train_set["median_house_value"].copy()
-    train_set = train_set.drop(
+    y_train = train_set["median_house_value"].copy()
+    X_train = train_set.drop(
         "median_house_value", axis=1
-    )  # drop labels for training set
-
-    imputer = SimpleImputer(strategy="median")
-
-    housing_num = train_set.drop("ocean_proximity", axis=1)
-
-    imputer.fit(housing_num)
-    X = imputer.transform(housing_num)
-
-    housing_tr = pd.DataFrame(X, columns=housing_num.columns, index=housing_num.index)
-    housing_tr["rooms_per_household"] = (
-        housing_tr["total_rooms"] / housing_tr["households"]
-    )
-    housing_tr["bedrooms_per_room"] = (
-        housing_tr["total_bedrooms"] / housing_tr["total_rooms"]
-    )
-    housing_tr["population_per_household"] = (
-        housing_tr["population"] / housing_tr["households"]
     )
 
-    housing_cat = train_set[["ocean_proximity"]]
-    housing_prepared = housing_tr.join(pd.get_dummies(housing_cat, drop_first=True))
-
-    train_set = housing_prepared
-
-    X_test = test_set.drop("median_house_value", axis=1)
     y_test = test_set["median_house_value"].copy()
+    X_test = test_set.drop(
+        "median_house_value", axis=1
+    )
+    def column_ratio(X):
+        return X[:, [0]] / X[:, [1]]
 
-    X_test_num = X_test.drop("ocean_proximity", axis=1)
-    X_test_prepared = imputer.transform(X_test_num)
-    X_test_prepared = pd.DataFrame(
-        X_test_prepared, columns=X_test_num.columns, index=X_test.index
-    )
-    X_test_prepared["rooms_per_household"] = (
-        X_test_prepared["total_rooms"] / X_test_prepared["households"]
-    )
-    X_test_prepared["bedrooms_per_room"] = (
-        X_test_prepared["total_bedrooms"] / X_test_prepared["total_rooms"]
-    )
-    X_test_prepared["population_per_household"] = (
-        X_test_prepared["population"] / X_test_prepared["households"]
-    )
+    def ratio_name(function_transformer, feature_names_in):
+        return ["ratio"] # feature names out
 
-    X_test_cat = X_test[["ocean_proximity"]]
-    X_test_prepared = X_test_prepared.join(pd.get_dummies(X_test_cat, drop_first=True))
-    X_test_prepared["median_house_value"] = y_test
-    # X_test_prepared = X_test_prepared.drop("median_house_value", axis=1)
+    def ratio_pipeline():
+        return make_pipeline(
+        SimpleImputer(strategy="median"),
+        FunctionTransformer(column_ratio, feature_names_out=ratio_name),
+        StandardScaler())
+
+    log_pipeline = make_pipeline(
+        SimpleImputer(strategy="median"),
+        FunctionTransformer(np.log, feature_names_out="one-to-one"),
+        StandardScaler())
+
+    #cluster_simil = ClusterSimilarity(n_clusters=10, gamma=1., random_state=42)
+    cat_pipeline = make_pipeline(
+        SimpleImputer(strategy="most_frequent"),
+        OneHotEncoder(handle_unknown="ignore"))
+
+    default_num_pipeline = make_pipeline(SimpleImputer(strategy="median"),
+                                            StandardScaler())
+
+    preprocessing = ColumnTransformer([
+        ("bedrooms", ratio_pipeline(), ["total_bedrooms", "total_rooms"]),
+        ("rooms_per_house", ratio_pipeline(), ["total_rooms", "households"]),
+        ("people_per_house", ratio_pipeline(), ["population", "households"]),
+        ("log", log_pipeline, ["total_bedrooms", "total_rooms", "population",
+        "households", "median_income"]),
+        #("geo", cluster_simil, ["latitude", "longitude"]),
+        #("cat", cat_pipeline, make_column_selector(dtype_include=object)),
+        ("cat", cat_pipeline, ["ocean_proximity"]),
+        ],
+        remainder=default_num_pipeline) # one column remaining: housing_median_age
+
+    #
+    # os.makedirs("./data/processed", exist_ok=True)
+    housing_prepared_train = preprocessing.fit_transform(X_train)
+    housing_prepared_test = preprocessing.transform(X_test)
+
+    housing_prepared_train = pd.DataFrame(housing_prepared_train,columns = preprocessing.get_feature_names_out())
+    housing_prepared_test = pd.DataFrame(housing_prepared_test,columns = preprocessing.get_feature_names_out())
+
+    train = housing_prepared_train
+    test = housing_prepared_test
+
+    train["median_house_value"] = y_train
+    test["median_house_value"] = y_test
+
     os.makedirs("./data/processed", exist_ok=True)
-    train_set.to_csv("data/processed/train.csv", index=False)
-    X_test_prepared.to_csv("data/processed/test.csv", index=False)
+    train.to_csv("data/processed/train.csv", index=False)
+    test.to_csv("data/processed/test.csv", index=False)
 
     param_grid = [
         # try 12 (3×4) combinations of hyperparameters
@@ -152,7 +185,7 @@ def main():
         scoring="neg_mean_squared_error",
         return_train_score=True,
     )
-    grid_search.fit(housing_prepared, housing_labels)
+    grid_search.fit(housing_prepared_train, y_train)
 
     final_model = grid_search.best_estimator_
 

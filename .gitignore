@@ -4,7 +4,6 @@ __pycache__/
 
 # Ignore CSV data files
 *.csv
-*.ipynb
 
 data/
 logs/
@@ -15,3 +14,5 @@ logs/
 
 *checkpoint.py
 tempCodeRunnerFile.py
+
+docs/build/html.zip
